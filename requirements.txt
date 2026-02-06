@@ -1,30 +1,4 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-
-# Configuração da Página
-st.set_page_config(page_title="Dashboard Capex & Obras", layout="wide")
-
-# Título Principal
-st.title("🏗️ Dashboard de Controle Capex e Obras")
-st.markdown("---")
-
-# --- FUNÇÃO DE CARGA DE DADOS ---
-@st.cache_data
-def load_data():
-    # Nomes EXATOS dos arquivos CSV que devem estar na mesma pasta deste script
-    file_ciclo2 = '(COMERC GD) - Controle Capex_Ciclo 2 30_01_26_Ver03 (1).xlsx - Controle Projetos_Ciclo2.csv'
-    file_ciclo3 = '(COMERC GD) - Controle Capex_Ciclo 2 30_01_26_Ver03 (1).xlsx - Controle Projetos_Ciclo3.csv'
-    file_fluxo = '(COMERC GD) - Controle Capex_Ciclo 2 30_01_26_Ver03 (1).xlsx - Fluxo de caixa.csv'
-    
-    try:
-        # Carregar CSVs
-        df_c2 = pd.read_csv(file_ciclo2)
-        df_c3 = pd.read_csv(file_ciclo3)
-        df_fluxo_raw = pd.read_csv(file_fluxo)
-        
-        streamlit
-        pandas
-        plotly
-        numpy
+﻿streamlit
+pandas
+plotly
+numpy
