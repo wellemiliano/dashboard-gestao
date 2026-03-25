@@ -36,6 +36,16 @@
     };
 
     const ALL_UFV_KEY = "__ALL_UFV__";
+    const UFV_KEY_ALIASES = {
+        "ALFANAS 4": "ALFENAS 4",
+        "BARRA DA CHOCA": "BARRA DO CHOCA",
+        "CAMPOBELO 5": "CAMPO BELO 5",
+        "PATO DE MINAS": "PATOS DE MINAS",
+        "COMERC PERNANBUCO 3": "COMERC PERNAMBUCO 3",
+        "CAMOCIM SAO FELIZ": "CAMOCIM DE SAO FELIX",
+        "CAMOCIM SAO FELIZ AU03": "CAMOCIM DE SAO FELIX",
+        "CAMOCIM SAO FELIZ AU04": "CAMOCIM DE SAO FELIX"
+    };
 
     const state = {
         data: {
@@ -114,11 +124,29 @@
         }
 
         text = text
+            .replace(/\bUFVS?\b/g, "UFV")
             .replace(/^UFV\s+/, "")
             .replace(/[^A-Z0-9]+/g, " ")
             .replace(/\s+/g, " ")
             .trim();
 
+        // Remove zero a esquerda em blocos numericos: "04" -> "4"
+        text = text
+            .split(" ")
+            .map((token) => {
+                if (/^\d+$/.test(token)) {
+                    const parsed = parseInt(token, 10);
+                    return Number.isFinite(parsed) ? String(parsed) : token;
+                }
+                return token;
+            })
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        if (Object.prototype.hasOwnProperty.call(UFV_KEY_ALIASES, text)) {
+            return UFV_KEY_ALIASES[text];
+        }
         return text;
     }
 
@@ -135,6 +163,24 @@
         if (!raw) return "";
         if (raw === raw.toUpperCase()) return toTitleCasePt(raw);
         return raw;
+    }
+
+    function ufvLabelQuality(label) {
+        const upper = String(label || "").toUpperCase();
+        let score = 0;
+        if (/^[A-Z]{1,4}\d{1,3}\s*[-:]/.test(upper)) score += 100;
+        if (/\b(CABECOTE|LTDA|SPE|HOLDING|GERACAO|ENERGIA|SOLAR|NEWCO|S\/A| SA\b| AS\b)\b/.test(upper)) score += 30;
+        if (/\bUFV\b/.test(upper)) score += 5;
+        if (/\d{3,}/.test(upper)) score += 8;
+        score += Math.min(upper.length, 80) / 20;
+        return score;
+    }
+
+    function isSelectableUfvKey(key) {
+        const text = safeText(key).toUpperCase();
+        if (!text) return false;
+        if (!/^[A-Z]/.test(text)) return false;
+        return text.length >= 3;
     }
 
     function toNumber(value) {
@@ -281,9 +327,24 @@
 
         const labelByKey = {};
         for (const [key, variantsMap] of byKey.entries()) {
+            const canonicalFromKey = cleanUfvLabel(toTitleCasePt(key));
+            if (canonicalFromKey) {
+                const synthetic = variantsMap.get(canonicalFromKey) || {
+                    label: canonicalFromKey,
+                    total: 0,
+                    capex: 0,
+                    fin: 0
+                };
+                variantsMap.set(canonicalFromKey, synthetic);
+            }
+
             const best = Array.from(variantsMap.values()).sort((a, b) => {
+                const qa = ufvLabelQuality(a.label);
+                const qb = ufvLabelQuality(b.label);
+                if (qa !== qb) return qa - qb;
                 if (b.capex !== a.capex) return b.capex - a.capex;
                 if (b.total !== a.total) return b.total - a.total;
+                if (a.label.length !== b.label.length) return a.label.length - b.label.length;
                 return a.label.localeCompare(b.label, "pt-BR");
             })[0];
             labelByKey[key] = best ? best.label : key;
@@ -384,12 +445,28 @@
         const select = byId("filtroUfv");
         if (!select) return;
 
-        const ufvSet = new Set();
+        const capexKeySet = new Set();
         for (const row of state.data.capex) {
-            if (row.ufv_key) ufvSet.add(row.ufv_key);
+            if (isSelectableUfvKey(row.ufv_key)) capexKeySet.add(row.ufv_key);
         }
+
+        const finKeySet = new Set();
         for (const row of state.data.financeiro) {
-            if (row.ufv_key) ufvSet.add(row.ufv_key);
+            if (isSelectableUfvKey(row.ufv_key)) finKeySet.add(row.ufv_key);
+        }
+
+        // Base do filtro: UFVs do Capex (dados mais consistentes).
+        // Se nao houver Capex carregado, cai para as UFVs limpas do financeiro.
+        const ufvSet = new Set();
+        if (capexKeySet.size > 0) {
+            for (const key of capexKeySet) ufvSet.add(key);
+        } else {
+            for (const key of finKeySet) {
+                const label = state.ufvLabelByKey[key] || key;
+                if (ufvLabelQuality(label) <= 18) {
+                    ufvSet.add(key);
+                }
+            }
         }
 
         const keys = Array.from(ufvSet).sort((a, b) => {
