@@ -386,18 +386,75 @@
         return match ? Number(match[1]) : 9999;
     }
 
-    async function loadCsv(path) {
+    function buildObjectsFromHeaderRows(matrixRows, headerIdx) {
+        if (!Array.isArray(matrixRows) || headerIdx < 0 || headerIdx >= matrixRows.length) return [];
+
+        const headerRow = matrixRows[headerIdx] || [];
+        const headers = headerRow.map((cell, idx) => {
+            const name = safeText(cell);
+            return name || `col_${idx}`;
+        });
+
+        const out = [];
+        for (let r = headerIdx + 1; r < matrixRows.length; r += 1) {
+            const sourceRow = matrixRows[r] || [];
+            const obj = {};
+            let hasValue = false;
+
+            for (let c = 0; c < headers.length; c += 1) {
+                const key = headers[c];
+                const value = c < sourceRow.length ? sourceRow[c] : "";
+                obj[key] = value;
+                if (!hasValue && safeText(value) !== "") hasValue = true;
+            }
+
+            if (hasValue) out.push(obj);
+        }
+        return out;
+    }
+
+    function parseCsvRows(text, headerMarker) {
+        const marker = normalizeColName(headerMarker || "");
+
+        if (marker) {
+            const parsedRaw = Papa.parse(text, {
+                header: false,
+                skipEmptyLines: true
+            });
+
+            const matrixRows = Array.isArray(parsedRaw.data) ? parsedRaw.data : [];
+            const headerIdx = matrixRows.findIndex((row) => {
+                if (!Array.isArray(row)) return false;
+                return row.some((cell) => normalizeColName(cell) === marker);
+            });
+
+            if (headerIdx >= 0) {
+                return {
+                    rows: buildObjectsFromHeaderRows(matrixRows, headerIdx),
+                    parseErrors: parsedRaw.errors || []
+                };
+            }
+        }
+
+        const parsedHeader = Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true
+        });
+        return {
+            rows: parsedHeader.data || [],
+            parseErrors: parsedHeader.errors || []
+        };
+    }
+
+    async function loadCsv(path, headerMarker) {
         const response = await fetch(`${path}?v=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) {
             throw new Error(`Falha ao carregar ${path} (HTTP ${response.status})`);
         }
         const text = await response.text();
-        const parsed = Papa.parse(text, {
-            header: true,
-            skipEmptyLines: true
-        });
+        const parsed = parseCsvRows(text, headerMarker);
 
-        const parseErrors = (parsed.errors || [])
+        const parseErrors = (parsed.parseErrors || [])
             .filter((e) => e && e.code !== "UndetectableDelimiter")
             .map((e) => `${path}: ${e.message}`);
 
@@ -816,8 +873,8 @@
 
         try {
             const results = await Promise.allSettled([
-                loadCsv(DATA_FILES.ciclo2),
-                loadCsv(DATA_FILES.ciclo3),
+                loadCsv(DATA_FILES.ciclo2, "UFV"),
+                loadCsv(DATA_FILES.ciclo3, "UFV"),
                 loadCsv(DATA_FILES.fluxo),
                 loadCsv(DATA_FILES.geral)
             ]);
