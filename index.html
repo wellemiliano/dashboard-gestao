@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Dashboard Capex e Obras</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        comerc: {
+                            dark: "#151515",
+                            card: "#212121",
+                            green: "#AECC56",
+                            greenDark: "#60AB56",
+                            text: "#F4F4F4",
+                            gray: "#808080"
+                        }
+                    },
+                    fontFamily: {
+                        sans: ["Montserrat", "sans-serif"]
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        :root {
+            --bg: #151515;
+            --card: #212121;
+            --muted: #2a2a2a;
+            --line: #3a3a3a;
+            --text: #f4f4f4;
+            --brand: #aecc56;
+            --brand-dark: #60ab56;
+            --danger: #ef4444;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: "Montserrat", sans-serif;
+        }
+
+        .card {
+            background: linear-gradient(165deg, #252525 0%, #1b1b1b 100%);
+            border: 1px solid var(--line);
+            border-radius: 0.9rem;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .input-dark {
+            background-color: var(--muted);
+            color: var(--text);
+            border: 1px solid #424242;
+        }
+
+        .input-dark:focus {
+            border-color: var(--brand);
+            box-shadow: 0 0 0 2px rgba(174, 204, 86, 0.2);
+            outline: none;
+        }
+
+        .kpi-card {
+            border-left-width: 4px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-3px);
+            filter: brightness(1.08);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .table-wrap {
+            border: 1px solid var(--line);
+            border-radius: 0.7rem;
+            overflow: auto;
+            max-height: 580px;
+            background-color: #1d1d1d;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background-color: #262626;
+            border-bottom: 1px solid var(--line);
+            color: var(--brand);
+            font-weight: 700;
+            font-size: 0.72rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 0.7rem 0.8rem;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        tbody td {
+            border-bottom: 1px solid #2f2f2f;
+            padding: 0.65rem 0.8rem;
+            white-space: nowrap;
+            font-size: 0.82rem;
+        }
+
+        tbody tr:hover td {
+            background-color: #2b2b2b;
+        }
+
+        .btn-brand {
+            background-color: var(--brand);
+            color: #151515;
+            font-weight: 700;
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+
+        .btn-brand:hover {
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+            background-color: var(--brand-dark);
+            color: #fff;
+        }
+
+        .btn-muted {
+            background-color: #2f2f2f;
+            border: 1px solid #444;
+            color: #e5e5e5;
+            transition: all 0.2s ease;
+        }
+
+        .btn-muted:hover {
+            border-color: var(--brand);
+            color: var(--brand);
+        }
+
+        .status-pill {
+            border: 1px solid #444;
+            background-color: #242424;
+            border-radius: 999px;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.72rem;
+            color: #d4d4d4;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1d1d1d;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4a4a4a;
+            border-radius: 999px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--brand);
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-6 flex flex-col gap-5">
+    <header class="card p-5 md:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div class="flex items-start gap-4">
+            <div class="w-11 h-11 rounded-xl bg-[#2b2b2b] border border-[#3d3d3d] flex items-center justify-center text-comerc-green">
+                <i data-lucide="factory" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="text-xl md:text-2xl font-extrabold tracking-wide">GESTAO CAPEX E OBRAS</h1>
+                <p class="text-[11px] md:text-xs text-comerc-green font-semibold uppercase tracking-wider">Painel de Controle</p>
+                <p id="statusCarregamento" class="text-xs text-gray-300 mt-2 flex items-center gap-2">
+                    <i data-lucide="database" class="w-3.5 h-3.5"></i>
+                    Carregando dados...
+                </p>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <span id="ultimaAtualizacao" class="status-pill">Ultima atualizacao: -</span>
+            <span id="resumoFiltros" class="status-pill">Registros: -</span>
+        </div>
+    </header>
+
+    <section class="card p-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 pb-3 border-b border-[#333]">
+            <h2 class="text-sm font-bold uppercase tracking-wider text-comerc-green flex items-center gap-2">
+                <i data-lucide="filter" class="w-4 h-4"></i>
+                Filtros
+            </h2>
+            <button id="btnLimpar" class="btn-muted px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide flex items-center gap-1">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                Limpar
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="text-[11px] text-gray-400 uppercase font-bold mb-1 block">UFV</label>
+                <select id="filtroUfv" class="input-dark w-full rounded-lg px-3 py-2 text-sm"></select>
+            </div>
+            <div>
+                <label class="text-[11px] text-gray-400 uppercase font-bold mb-1 block">Busca</label>
+                <input id="filtroBusca" type="text" class="input-dark w-full rounded-lg px-3 py-2 text-sm" placeholder="Natureza, fornecedor ou UFV...">
+            </div>
+            <div>
+                <label class="text-[11px] text-gray-400 uppercase font-bold mb-1 block">Linhas por pagina</label>
+                <select id="pageSize" class="input-dark w-full rounded-lg px-3 py-2 text-sm">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <article class="card kpi-card border-l-[#4b5563] p-4">
+            <p class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Total Contratado</p>
+            <p id="kpiContratado" class="text-xl md:text-2xl font-bold mt-2">R$ 0,00</p>
+        </article>
+        <article class="card kpi-card border-l-[#3b82f6] p-4">
+            <p class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Total Medido</p>
+            <p id="kpiMedido" class="text-xl md:text-2xl font-bold mt-2">R$ 0,00</p>
+        </article>
+        <article class="card kpi-card border-l-[#22c55e] p-4">
+            <p class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Total Pago</p>
+            <p id="kpiPago" class="text-xl md:text-2xl font-bold mt-2">R$ 0,00</p>
+            <p id="kpiDif" class="text-[11px] mt-2 text-gray-300">Dif: R$ 0,00</p>
+        </article>
+        <article class="card kpi-card border-l-[#f59e0b] p-4">
+            <p class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Saldo a Medir</p>
+            <p id="kpiSaldo" class="text-xl md:text-2xl font-bold mt-2">R$ 0,00</p>
+        </article>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <article class="card p-4 xl:col-span-2">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green mb-3">Contratado vs Medido vs Pago</h3>
+            <div id="chartComparativo" class="h-[320px]"></div>
+        </article>
+        <article class="card p-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green mb-3">Avanco Fisico (medio)</h3>
+            <div id="chartGauge" class="h-[320px]"></div>
+        </article>
+    </section>
+
+    <section class="card p-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green">Detalhamento de Contratos</h3>
+            <div class="flex items-center gap-2 text-xs text-gray-300">
+                <span id="tableInfo">0 registros</span>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th data-sort="ufv">UFV <span data-sort-icon="ufv"></span></th>
+                        <th data-sort="natureza">Natureza <span data-sort-icon="natureza"></span></th>
+                        <th data-sort="fornecedor">Fornecedor <span data-sort-icon="fornecedor"></span></th>
+                        <th data-sort="contrato_original">Contrato Original <span data-sort-icon="contrato_original"></span></th>
+                        <th data-sort="valor_total">Valor Total <span data-sort-icon="valor_total"></span></th>
+                        <th data-sort="fd_medicao">FD + Medicao <span data-sort-icon="fd_medicao"></span></th>
+                        <th data-sort="saldo_a_medir">Saldo a Medir <span data-sort-icon="saldo_a_medir"></span></th>
+                        <th data-sort="avanco_obra">Avanco Obra % <span data-sort-icon="avanco_obra"></span></th>
+                        <th data-sort="ciclo">Ciclo <span data-sort-icon="ciclo"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <button id="prevPage" class="btn-muted px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide">Anterior</button>
+            <span id="pageLabel" class="text-xs text-gray-300">Pagina 1 de 1</span>
+            <button id="nextPage" class="btn-muted px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide">Proxima</button>
+        </div>
+    </section>
+
+    <section id="fluxoSection" class="card p-5 hidden">
+        <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green mb-3">Previsao de Fluxo de Caixa</h3>
+        <div id="chartFluxo" class="h-[320px]"></div>
+    </section>
+
+    <section id="alertSection" class="card p-4 border border-red-800 hidden">
+        <h3 class="text-sm font-bold text-red-300 uppercase tracking-wider mb-2">Avisos de carga</h3>
+        <ul id="alertList" class="text-sm text-red-200 list-disc pl-5"></ul>
+    </section>
+
+    <script src="dashboard.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
