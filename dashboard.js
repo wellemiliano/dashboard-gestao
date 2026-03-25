@@ -225,6 +225,16 @@
         });
     }
 
+    function formatCurrencyCompact(value) {
+        const n = Number.isFinite(value) ? value : 0;
+        return n.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+            notation: "compact",
+            maximumFractionDigits: 1
+        });
+    }
+
     function formatPercent(value) {
         const n = Number.isFinite(value) ? value : 0;
         return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -573,14 +583,30 @@
         const totalMedido = capexRows.reduce((sum, row) => sum + row.fd_medicao, 0);
         const totalPago = finRows.reduce((sum, row) => sum + row.valor_nf, 0);
         const saldo = capexRows.reduce((sum, row) => sum + row.saldo_a_medir, 0);
-        const avanco = pctFromSeries(capexRows.map((row) => row.avanco_obra));
+
+        const avancoFisicoSeries = capexRows
+            .map((row) => row.avanco_obra)
+            .filter((v) => Number.isFinite(v) && v > 0);
+        const avancoContratualSeries = capexRows
+            .map((row) => row.avanco_contratual)
+            .filter((v) => Number.isFinite(v) && v > 0);
+
+        let avanco = 0;
+        let avancoSource = "fisico";
+        if (avancoFisicoSeries.length > 0) {
+            avanco = pctFromSeries(avancoFisicoSeries);
+        } else if (avancoContratualSeries.length > 0) {
+            avanco = pctFromSeries(avancoContratualSeries);
+            avancoSource = "contratual";
+        }
 
         return {
             totalContratado: totalContratado,
             totalMedido: totalMedido,
             totalPago: totalPago,
             saldo: saldo,
-            avanco: avanco
+            avanco: avanco,
+            avancoSource: avancoSource
         };
     }
 
@@ -607,21 +633,43 @@
     }
 
     function renderComparativoChart(metrics) {
+        const values = [metrics.totalContratado, metrics.totalMedido, metrics.totalPago];
+        const labels = ["Contratado", "Medido", "Pago"];
+        const maxValue = Math.max(...values, 1);
+        const textPositions = values.map((v) => (v <= maxValue * 0.12 ? "outside" : "auto"));
+        const pagoPct = metrics.totalMedido > 0 ? (metrics.totalPago / metrics.totalMedido) * 100 : 0;
+
         const data = [{
             type: "bar",
-            x: ["Contratado", "Medido", "Pago"],
-            y: [metrics.totalContratado, metrics.totalMedido, metrics.totalPago],
+            x: labels,
+            y: values,
             marker: {
                 color: ["#64748b", "#3b82f6", "#22c55e"],
                 line: { color: "#111", width: 1 }
             },
-            text: [metrics.totalContratado, metrics.totalMedido, metrics.totalPago].map(formatCurrency),
-            textposition: "outside",
-            hovertemplate: "%{x}<br>%{text}<extra></extra>"
+            text: values.map(formatCurrencyCompact),
+            customdata: values.map(formatCurrency),
+            textposition: textPositions,
+            cliponaxis: false,
+            hovertemplate: "%{x}<br>%{customdata}<extra></extra>"
         }];
 
         const layout = plotCommonLayout();
+        layout.margin = { t: 80, r: 28, b: 52, l: 70 };
         layout.yaxis.tickprefix = "R$ ";
+        layout.yaxis.range = [0, maxValue * 1.22];
+        layout.uniformtext = { minsize: 11, mode: "hide" };
+        layout.annotations = [{
+            xref: "paper",
+            yref: "paper",
+            x: 1,
+            y: 1.18,
+            xanchor: "right",
+            showarrow: false,
+            align: "right",
+            font: { size: 11, color: "#bfbfbf" },
+            text: `Pago equivale a ${pagoPct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% do Medido`
+        }];
 
         Plotly.newPlot("chartComparativo", data, layout, {
             displayModeBar: false,
@@ -634,6 +682,9 @@
             type: "indicator",
             mode: "gauge+number",
             value: metrics.avanco,
+            title: {
+                text: metrics.avancoSource === "contratual" ? "% Avanco (Contratual)" : "% Avanco (Fisico)"
+            },
             number: { suffix: "%", font: { color: "#F4F4F4" } },
             gauge: {
                 axis: { range: [0, 100], tickcolor: "#a3a3a3" },
