@@ -379,13 +379,59 @@
         if (!rows || !rows.length) return [];
 
         const first = rows[0];
-        const monthCols = Object.keys(first).filter((col) => normalizeColName(col).startsWith("mes"));
+        const cols = Object.keys(first);
+        const monthCols = cols.filter((col) => normalizeColName(col).startsWith("mes"));
         if (!monthCols.length) return [];
 
+        const speCol = cols.find((col) => {
+            const key = normalizeColName(col);
+            return key === "spe" || key === "ufv" || key === "usina" || key === "filial" || key === "usinafilial";
+        }) || cols[0];
+        const naturezaCol = cols.find((col) => normalizeColName(col) === "natureza");
+
         const out = [];
+        let lastSpeRaw = "";
+
+        // Preferimos as linhas "Total" para evitar dupla contagem por natureza.
         for (const row of rows) {
+            const speRaw = safeText(row[speCol]);
+            if (speRaw && safeUpper(speRaw) !== "TOTAL") {
+                lastSpeRaw = speRaw;
+            }
+
+            const natureza = naturezaCol ? safeUpper(row[naturezaCol]) : "";
+            const isTotalRow = safeUpper(speRaw) === "TOTAL" || natureza === "TOTAL";
+            if (!isTotalRow) continue;
+
+            const ownerSpeRaw = safeUpper(speRaw) === "TOTAL" ? lastSpeRaw : speRaw;
+            const speKey = normalizeUfvKey(ownerSpeRaw);
+            if (!isSelectableUfvKey(speKey)) continue;
+
             for (const mes of monthCols) {
                 out.push({
+                    spe_key: speKey,
+                    spe_raw: safeText(ownerSpeRaw),
+                    mes: safeText(mes),
+                    valor: toNumber(row[mes])
+                });
+            }
+        }
+
+        if (out.length) return out;
+
+        // Fallback: se nao houver linhas "Total", agrega linha a linha.
+        for (const row of rows) {
+            const speRaw = safeText(row[speCol]);
+            const speKey = normalizeUfvKey(speRaw);
+            if (!isSelectableUfvKey(speKey)) continue;
+
+            const natureza = naturezaCol ? safeUpper(row[naturezaCol]) : "";
+            if (safeUpper(speRaw) === "TOTAL" || natureza === "TOTAL") continue;
+
+            for (const mes of monthCols) {
+                out.push({
+                    spe_key: speKey,
+                    spe_raw: safeText(speRaw),
                     mes: safeText(mes),
                     valor: toNumber(row[mes])
                 });
@@ -720,7 +766,88 @@
         });
     }
 
-    function renderFluxoChart() {
+    function resolveFluxoSpeKeys(filteredCapexRows) {
+        const available = Array.from(new Set(
+            state.data.fluxo.map((row) => row.spe_key).filter(Boolean)
+        ));
+        if (!available.length) return new Set();
+
+        if (state.selectedUfvKey === ALL_UFV_KEY && state.selectedCiclo === ALL_CICLO_KEY && !state.searchText) {
+            return new Set(available);
+        }
+
+        const candidateUfvKeys = new Set((filteredCapexRows || []).map((row) => row.ufv_key).filter(Boolean));
+        if (state.selectedUfvKey !== ALL_UFV_KEY) {
+            candidateUfvKeys.add(state.selectedUfvKey);
+        }
+
+        const portfolioKeys = new Set((filteredCapexRows || [])
+            .map((row) => normalizeUfvKey(row.portfolio))
+            .filter((key) => isSelectableUfvKey(key)));
+
+        // Se filtrou UFV e a busca zerou linhas, tenta recuperar portfolio pela base completa.
+        if (state.selectedUfvKey !== ALL_UFV_KEY && !portfolioKeys.size) {
+            for (const row of state.data.capex) {
+                if (row.ufv_key !== state.selectedUfvKey) continue;
+                const pKey = normalizeUfvKey(row.portfolio);
+                if (isSelectableUfvKey(pKey)) portfolioKeys.add(pKey);
+            }
+        }
+
+        const matched = new Set();
+        for (const speKey of available) {
+            if (candidateUfvKeys.has(speKey)) {
+                matched.add(speKey);
+                continue;
+            }
+            for (const pKey of portfolioKeys) {
+                if (speKey === pKey || speKey.includes(pKey) || pKey.includes(speKey)) {
+                    matched.add(speKey);
+                    break;
+                }
+            }
+        }
+
+        if (!matched.size && state.selectedUfvKey !== ALL_UFV_KEY) {
+            const labelKey = normalizeUfvKey(state.ufvLabelByKey[state.selectedUfvKey] || state.selectedUfvKey);
+            if (labelKey) {
+                for (const speKey of available) {
+                    if (speKey === labelKey || speKey.includes(labelKey) || labelKey.includes(speKey)) {
+                        matched.add(speKey);
+                    }
+                }
+            }
+        }
+
+        return matched;
+    }
+
+    function renderEmptyFluxoCharts(message) {
+        const baseLayout = plotCommonLayout();
+        baseLayout.margin = { t: 20, r: 18, b: 40, l: 40 };
+        baseLayout.xaxis.visible = false;
+        baseLayout.yaxis.visible = false;
+        baseLayout.annotations = [{
+            x: 0.5,
+            y: 0.5,
+            xref: "paper",
+            yref: "paper",
+            text: message,
+            showarrow: false,
+            font: { size: 12, color: "#bfbfbf" }
+        }];
+
+        Plotly.newPlot("chartFluxo", [], baseLayout, {
+            displayModeBar: false,
+            responsive: true
+        });
+        Plotly.newPlot("chartFluxoAcumulado", [], baseLayout, {
+            displayModeBar: false,
+            responsive: true
+        });
+    }
+
+    function renderFluxoChart(filteredCapexRows) {
         const section = byId("fluxoSection");
         const chartMensal = byId("chartFluxo");
         const chartAcumulado = byId("chartFluxoAcumulado");
@@ -731,8 +858,22 @@
             return;
         }
 
+        const speKeys = resolveFluxoSpeKeys(filteredCapexRows);
+        let fluxoRows = state.data.fluxo;
+        if (speKeys.size) {
+            fluxoRows = fluxoRows.filter((row) => speKeys.has(row.spe_key));
+        } else if (state.selectedUfvKey !== ALL_UFV_KEY || state.selectedCiclo !== ALL_CICLO_KEY || state.searchText) {
+            fluxoRows = [];
+        }
+
+        if (!fluxoRows.length) {
+            renderEmptyFluxoCharts("Sem dados de fluxo para o filtro selecionado.");
+            section.classList.remove("hidden");
+            return;
+        }
+
         const sumByMes = new Map();
-        for (const row of state.data.fluxo) {
+        for (const row of fluxoRows) {
             const key = row.mes || "Mes";
             const current = sumByMes.get(key) || 0;
             sumByMes.set(key, current + row.valor);
@@ -809,8 +950,8 @@
             kpiDif: "Diferenca entre valor pago e valor medido.",
             chartComparativo: "Compara os totais de contratado e medido no recorte atual.",
             chartGauge: "Percentual medio de avanco contratual no recorte atual.",
-            chartFluxo: "Fluxo de caixa mensal previsto para o portfolio completo.",
-            chartFluxoAcumulado: "Evolucao acumulada do fluxo de caixa ao longo dos meses.",
+            chartFluxo: "Fluxo de caixa mensal previsto no recorte atual de filtros.",
+            chartFluxoAcumulado: "Evolucao acumulada do fluxo de caixa no recorte atual de filtros.",
             tableInfo: "Quantidade total de contratos exibidos na tabela.",
             prevPage: "Volta para a pagina anterior da tabela.",
             nextPage: "Avanca para a proxima pagina da tabela.",
@@ -948,7 +1089,7 @@
         renderKpis(metrics);
         renderComparativoChart(metrics);
         renderGauge(metrics);
-        renderFluxoChart();
+        renderFluxoChart(capexRows);
         renderTable(tableRows);
         renderSortIndicators();
         updateResumo(tableRows);
