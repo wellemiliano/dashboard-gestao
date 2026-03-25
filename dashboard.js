@@ -179,8 +179,9 @@
     function isSelectableUfvKey(key) {
         const text = safeText(key).toUpperCase();
         if (!text) return false;
-        if (!/^[A-Z]/.test(text)) return false;
-        return text.length >= 3;
+        if (text.length < 2) return false;
+        if (text === "0" || text === "UFV" || text === "TOTAL" || text === "TODAS") return false;
+        return /[A-Z]/.test(text);
     }
 
     function toNumber(value) {
@@ -583,30 +584,18 @@
         const totalMedido = capexRows.reduce((sum, row) => sum + row.fd_medicao, 0);
         const totalPago = finRows.reduce((sum, row) => sum + row.valor_nf, 0);
         const saldo = capexRows.reduce((sum, row) => sum + row.saldo_a_medir, 0);
-
-        const avancoFisicoSeries = capexRows
-            .map((row) => row.avanco_obra)
-            .filter((v) => Number.isFinite(v) && v > 0);
         const avancoContratualSeries = capexRows
             .map((row) => row.avanco_contratual)
             .filter((v) => Number.isFinite(v) && v > 0);
 
-        let avanco = 0;
-        let avancoSource = "fisico";
-        if (avancoFisicoSeries.length > 0) {
-            avanco = pctFromSeries(avancoFisicoSeries);
-        } else if (avancoContratualSeries.length > 0) {
-            avanco = pctFromSeries(avancoContratualSeries);
-            avancoSource = "contratual";
-        }
+        const avanco = avancoContratualSeries.length ? pctFromSeries(avancoContratualSeries) : 0;
 
         return {
             totalContratado: totalContratado,
             totalMedido: totalMedido,
             totalPago: totalPago,
             saldo: saldo,
-            avanco: avanco,
-            avancoSource: avancoSource
+            avanco: avanco
         };
     }
 
@@ -683,7 +672,7 @@
             mode: "gauge+number",
             value: metrics.avanco,
             title: {
-                text: metrics.avancoSource === "contratual" ? "% Avanco (Contratual)" : "% Avanco (Fisico)"
+                text: "% Avanco Contratual"
             },
             number: { suffix: "%", font: { color: "#F4F4F4" } },
             gauge: {
@@ -827,8 +816,8 @@
                 <td class="text-right font-mono">${formatCurrency(row.valor_total)}</td>
                 <td class="text-right font-mono">${formatCurrency(row.fd_medicao)}</td>
                 <td class="text-right font-mono">${formatCurrency(row.saldo_a_medir)}</td>
-                <td class="text-right font-semibold ${avancoDisplay(row.avanco_obra) >= 100 ? "text-green-300" : "text-amber-300"}">
-                    ${formatPercent(avancoDisplay(row.avanco_obra))}
+                <td class="text-right font-semibold ${avancoDisplay(row.avanco_contratual) >= 100 ? "text-green-300" : "text-amber-300"}">
+                    ${formatPercent(avancoDisplay(row.avanco_contratual))}
                 </td>
                 <td>${escapeHtml(row.ciclo)}</td>
             </tr>
