@@ -824,7 +824,7 @@
             body.innerHTML = `
                 <tr>
                     <td colspan="9" class="text-center text-gray-400 py-6">
-                        Nenhum registro encontrado para os filtros atuais.
+                        Nenhum contrato com valor original encontrado para os filtros atuais.
                     </td>
                 </tr>
             `;
@@ -862,15 +862,16 @@
 
     function render() {
         const { capexRows, finRows } = getFilteredData();
+        const tableRows = capexRows.filter((row) => Number.isFinite(row.contrato_original) && Math.abs(row.contrato_original) > 0);
         const metrics = calculateMetrics(capexRows, finRows);
 
         renderKpis(metrics);
         renderComparativoChart(metrics);
         renderGauge(metrics);
         renderFluxoChart();
-        renderTable(capexRows);
+        renderTable(tableRows);
         renderSortIndicators();
-        updateResumo(capexRows);
+        updateResumo(tableRows);
     }
 
     function bindEvents() {
