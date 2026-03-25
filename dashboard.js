@@ -726,7 +726,7 @@
         const chartAcumulado = byId("chartFluxoAcumulado");
         if (!section || !chartMensal || !chartAcumulado) return;
 
-        if (state.selectedUfvKey !== ALL_UFV_KEY || state.selectedCiclo !== ALL_CICLO_KEY || !state.data.fluxo.length) {
+        if (!state.data.fluxo.length) {
             section.classList.add("hidden");
             return;
         }
