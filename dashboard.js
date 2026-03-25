@@ -36,6 +36,7 @@
     };
 
     const ALL_UFV_KEY = "__ALL_UFV__";
+    const ALL_CICLO_KEY = "__ALL_CICLO__";
     const UFV_KEY_ALIASES = {
         "ALFANAS 4": "ALFENAS 4",
         "BARRA DA CHOCA": "BARRA DO CHOCA",
@@ -54,6 +55,7 @@
             fluxo: []
         },
         selectedUfvKey: ALL_UFV_KEY,
+        selectedCiclo: ALL_CICLO_KEY,
         ufvLabelByKey: {},
         searchText: "",
         errors: [],
@@ -554,23 +556,57 @@
         select.value = state.selectedUfvKey;
     }
 
+    function fillCicloFilter() {
+        const select = byId("filtroCiclo");
+        if (!select) return;
+
+        const ciclos = Array.from(new Set(
+            state.data.capex
+                .map((row) => safeText(row.ciclo))
+                .filter(Boolean)
+        )).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+
+        const options = [{ key: ALL_CICLO_KEY, label: "Todos" }, ...ciclos.map((ciclo) => ({
+            key: ciclo,
+            label: ciclo
+        }))];
+
+        select.innerHTML = options
+            .map((opt) => `<option value="${escapeHtml(opt.key)}">${escapeHtml(opt.label)}</option>`)
+            .join("");
+
+        const hasCurrent = options.some((opt) => opt.key === state.selectedCiclo);
+        state.selectedCiclo = hasCurrent ? state.selectedCiclo : ALL_CICLO_KEY;
+        select.value = state.selectedCiclo;
+    }
+
     function getFilteredData() {
         const ufvKey = state.selectedUfvKey;
+        const ciclo = state.selectedCiclo;
         const q = state.searchText;
-        const allSelected = ufvKey === ALL_UFV_KEY;
+        const allUfvSelected = ufvKey === ALL_UFV_KEY;
+        const allCicloSelected = ciclo === ALL_CICLO_KEY;
 
         const capexRows = state.data.capex.filter((row) => {
-            const ufvMatch = allSelected || row.ufv_key === ufvKey;
-            if (!ufvMatch) return false;
+            const ufvMatch = allUfvSelected || row.ufv_key === ufvKey;
+            const cicloMatch = allCicloSelected || row.ciclo === ciclo;
+            if (!ufvMatch || !cicloMatch) return false;
 
             if (!q) return true;
             const hay = `${row.ufv_label || row.ufv} ${row.natureza} ${row.fornecedor} ${row.ciclo}`.toLowerCase();
             return hay.includes(q);
         });
 
+        const capexUfvKeys = new Set(capexRows.map((row) => row.ufv_key).filter(Boolean));
+
         const finRows = state.data.financeiro.filter((row) => {
-            if (allSelected) return true;
-            return row.ufv_key === ufvKey;
+            const ufvMatch = allUfvSelected || row.ufv_key === ufvKey;
+            if (!ufvMatch) return false;
+
+            if (!allCicloSelected) {
+                return capexUfvKeys.has(row.ufv_key);
+            }
+            return true;
         });
 
         return {
@@ -622,18 +658,17 @@
     }
 
     function renderComparativoChart(metrics) {
-        const values = [metrics.totalContratado, metrics.totalMedido, metrics.totalPago];
-        const labels = ["Contratado", "Medido", "Pago"];
+        const values = [metrics.totalContratado, metrics.totalMedido];
+        const labels = ["Contratado", "Medido"];
         const maxValue = Math.max(...values, 1);
         const textPositions = values.map((v) => (v <= maxValue * 0.12 ? "outside" : "auto"));
-        const pagoPct = metrics.totalMedido > 0 ? (metrics.totalPago / metrics.totalMedido) * 100 : 0;
 
         const data = [{
             type: "bar",
             x: labels,
             y: values,
             marker: {
-                color: ["#64748b", "#3b82f6", "#22c55e"],
+                color: ["#64748b", "#3b82f6"],
                 line: { color: "#111", width: 1 }
             },
             text: values.map(formatCurrencyCompact),
@@ -648,17 +683,6 @@
         layout.yaxis.tickprefix = "R$ ";
         layout.yaxis.range = [0, maxValue * 1.22];
         layout.uniformtext = { minsize: 11, mode: "hide" };
-        layout.annotations = [{
-            xref: "paper",
-            yref: "paper",
-            x: 1,
-            y: 1.18,
-            xanchor: "right",
-            showarrow: false,
-            align: "right",
-            font: { size: 11, color: "#bfbfbf" },
-            text: `Pago equivale a ${pagoPct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% do Medido`
-        }];
 
         Plotly.newPlot("chartComparativo", data, layout, {
             displayModeBar: false,
@@ -700,7 +724,7 @@
         const section = byId("fluxoSection");
         if (!section) return;
 
-        if (state.selectedUfvKey !== ALL_UFV_KEY || !state.data.fluxo.length) {
+        if (state.selectedUfvKey !== ALL_UFV_KEY || state.selectedCiclo !== ALL_CICLO_KEY || !state.data.fluxo.length) {
             section.classList.add("hidden");
             return;
         }
@@ -827,10 +851,13 @@
     function updateResumo(filteredCapexRows) {
         const el = byId("resumoFiltros");
         if (!el) return;
-        const label = state.selectedUfvKey === ALL_UFV_KEY
+        const ufvLabel = state.selectedUfvKey === ALL_UFV_KEY
             ? "Portfolio"
             : `UFV: ${state.ufvLabelByKey[state.selectedUfvKey] || state.selectedUfvKey}`;
-        el.textContent = `${label} | Registros: ${filteredCapexRows.length.toLocaleString("pt-BR")}`;
+        const cicloLabel = state.selectedCiclo === ALL_CICLO_KEY
+            ? "Todos os ciclos"
+            : state.selectedCiclo;
+        el.textContent = `${ufvLabel} | Ciclo: ${cicloLabel} | Registros: ${filteredCapexRows.length.toLocaleString("pt-BR")}`;
     }
 
     function render() {
@@ -848,8 +875,8 @@
 
     function bindEvents() {
         const filtroUfv = byId("filtroUfv");
+        const filtroCiclo = byId("filtroCiclo");
         const filtroBusca = byId("filtroBusca");
-        const pageSize = byId("pageSize");
         const btnLimpar = byId("btnLimpar");
         const prev = byId("prevPage");
         const next = byId("nextPage");
@@ -860,23 +887,25 @@
             render();
         });
 
+        filtroCiclo.addEventListener("change", () => {
+            state.selectedCiclo = filtroCiclo.value || ALL_CICLO_KEY;
+            state.page = 1;
+            render();
+        });
+
         filtroBusca.addEventListener("input", () => {
             state.searchText = safeText(filtroBusca.value).toLowerCase();
             state.page = 1;
             render();
         });
 
-        pageSize.addEventListener("change", () => {
-            state.pageSize = Number(pageSize.value) || 25;
-            state.page = 1;
-            render();
-        });
-
         btnLimpar.addEventListener("click", () => {
             state.selectedUfvKey = ALL_UFV_KEY;
+            state.selectedCiclo = ALL_CICLO_KEY;
             state.searchText = "";
             state.page = 1;
             filtroUfv.value = ALL_UFV_KEY;
+            filtroCiclo.value = ALL_CICLO_KEY;
             filtroBusca.value = "";
             render();
         });
@@ -958,6 +987,7 @@
             }
 
             fillUfvFilter();
+            fillCicloFilter();
             bindEvents();
             render();
         } catch (err) {
