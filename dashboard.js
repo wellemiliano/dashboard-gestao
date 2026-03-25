@@ -78,13 +78,48 @@
     }
 
     function normalizeUfvKey(value) {
-        return safeText(value)
+        let text = safeText(value);
+        if (!text) return "";
+
+        text = text
             .normalize("NFKD")
             .replace(/[\u0300-\u036f]/g, "")
             .toUpperCase()
+            .trim();
+
+        // Remove prefixos com codigo tecnico no inicio: AZ05-, AH03-, etc.
+        text = text.replace(/^[A-Z]{1,4}\d{1,3}\s*[-:]?\s*/, "");
+
+        // Se houver conteudo entre parenteses, prioriza esse texto (ex.: "(CUPIRA)")
+        const parenMatch = text.match(/\(([^()]{2,50})\)/);
+        if (parenMatch && /[A-Z]/.test(parenMatch[1])) {
+            text = parenMatch[1].trim();
+        }
+
+        let parts = null;
+        if (text.includes(" - ")) {
+            parts = text.split(" - ").map((p) => p.trim()).filter(Boolean);
+        } else if (/\s-\s*/.test(text)) {
+            // Trata casos como "UFV ... -JEQUIE" sem quebrar nomes tipo "GUARDA-MOR"
+            parts = text.split(/\s-\s*/).map((p) => p.trim()).filter(Boolean);
+        }
+
+        if (parts && parts.length >= 2) {
+            let tail = parts[parts.length - 1];
+            // Se o ultimo trecho for so codigo, usa o trecho anterior.
+            if (/^(?:[A-Z]{1,4}\d{1,6}|\d{2,6})$/.test(tail)) {
+                tail = parts[parts.length - 2];
+            }
+            text = tail;
+        }
+
+        text = text
+            .replace(/^UFV\s+/, "")
             .replace(/[^A-Z0-9]+/g, " ")
             .replace(/\s+/g, " ")
             .trim();
+
+        return text;
     }
 
     function toTitleCasePt(value) {
