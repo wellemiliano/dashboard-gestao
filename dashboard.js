@@ -35,13 +35,16 @@
         nodanf: "numero_nf"
     };
 
+    const ALL_UFV_KEY = "__ALL_UFV__";
+
     const state = {
         data: {
             capex: [],
             financeiro: [],
             fluxo: []
         },
-        selectedUfv: "Todas",
+        selectedUfvKey: ALL_UFV_KEY,
+        ufvLabelByKey: {},
         searchText: "",
         errors: [],
         sort: {
@@ -72,6 +75,31 @@
 
     function safeUpper(value) {
         return safeText(value).toUpperCase();
+    }
+
+    function normalizeUfvKey(value) {
+        return safeText(value)
+            .normalize("NFKD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function toTitleCasePt(value) {
+        if (!value) return "";
+        return value
+            .toLowerCase()
+            .replace(/(^|[\s-])([a-zà-ÿ])/g, (match, p1, p2) => `${p1}${p2.toUpperCase()}`)
+            .replace(/\bUfv\b/g, "UFV");
+    }
+
+    function cleanUfvLabel(value) {
+        const raw = safeText(value).replace(/\s*-\s*/g, " - ").replace(/\s+/g, " ").trim();
+        if (!raw) return "";
+        if (raw === raw.toUpperCase()) return toTitleCasePt(raw);
+        return raw;
     }
 
     function toNumber(value) {
@@ -148,6 +176,8 @@
 
             const rec = {
                 ciclo: ciclo,
+                ufv_raw: safeText(mapped.ufv),
+                ufv_key: normalizeUfvKey(mapped.ufv),
                 ufv: safeUpper(mapped.ufv),
                 natureza: safeText(mapped.natureza),
                 fornecedor: safeText(mapped.fornecedor),
@@ -177,6 +207,8 @@
             const mapped = mapRowByColumns(row, FIN_COL_MAP);
             if (!Object.keys(mapped).length) continue;
             out.push({
+                ufv_pag_raw: safeText(mapped.ufv_pag),
+                ufv_key: normalizeUfvKey(mapped.ufv_pag),
                 ufv_pag: safeUpper(mapped.ufv_pag),
                 fornecedor_pag: safeText(mapped.fornecedor_pag),
                 status_pag: safeText(mapped.status_pag),
@@ -186,6 +218,52 @@
             });
         }
         return out;
+    }
+
+    function buildUfvLabelMap(capexRows, finRows) {
+        const byKey = new Map();
+
+        function pushVariant(key, raw, source) {
+            if (!key) return;
+            const labelRaw = cleanUfvLabel(raw) || key;
+            if (!byKey.has(key)) {
+                byKey.set(key, new Map());
+            }
+            const variants = byKey.get(key);
+            const existing = variants.get(labelRaw) || { label: labelRaw, total: 0, capex: 0, fin: 0 };
+            existing.total += 1;
+            if (source === "capex") existing.capex += 1;
+            if (source === "fin") existing.fin += 1;
+            variants.set(labelRaw, existing);
+        }
+
+        for (const row of capexRows) {
+            pushVariant(row.ufv_key, row.ufv_raw || row.ufv, "capex");
+        }
+        for (const row of finRows) {
+            pushVariant(row.ufv_key, row.ufv_pag_raw || row.ufv_pag, "fin");
+        }
+
+        const labelByKey = {};
+        for (const [key, variantsMap] of byKey.entries()) {
+            const best = Array.from(variantsMap.values()).sort((a, b) => {
+                if (b.capex !== a.capex) return b.capex - a.capex;
+                if (b.total !== a.total) return b.total - a.total;
+                return a.label.localeCompare(b.label, "pt-BR");
+            })[0];
+            labelByKey[key] = best ? best.label : key;
+        }
+        return labelByKey;
+    }
+
+    function applyUfvLabels() {
+        const labelByKey = state.ufvLabelByKey || {};
+        for (const row of state.data.capex) {
+            row.ufv_label = labelByKey[row.ufv_key] || cleanUfvLabel(row.ufv_raw || row.ufv) || row.ufv_key;
+        }
+        for (const row of state.data.financeiro) {
+            row.ufv_pag_label = labelByKey[row.ufv_key] || cleanUfvLabel(row.ufv_pag_raw || row.ufv_pag) || row.ufv_key;
+        }
     }
 
     function normalizeFluxoRows(rows) {
@@ -273,33 +351,46 @@
 
         const ufvSet = new Set();
         for (const row of state.data.capex) {
-            if (row.ufv) ufvSet.add(row.ufv);
+            if (row.ufv_key) ufvSet.add(row.ufv_key);
         }
         for (const row of state.data.financeiro) {
-            if (row.ufv_pag) ufvSet.add(row.ufv_pag);
+            if (row.ufv_key) ufvSet.add(row.ufv_key);
         }
 
-        const options = ["Todas", ...Array.from(ufvSet).sort((a, b) => a.localeCompare(b, "pt-BR"))];
-        select.innerHTML = options.map((opt) => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join("");
-        select.value = state.selectedUfv;
+        const keys = Array.from(ufvSet).sort((a, b) => {
+            const la = state.ufvLabelByKey[a] || a;
+            const lb = state.ufvLabelByKey[b] || b;
+            return la.localeCompare(lb, "pt-BR");
+        });
+
+        const options = [{ key: ALL_UFV_KEY, label: "Todas" }, ...keys.map((key) => ({
+            key: key,
+            label: state.ufvLabelByKey[key] || key
+        }))];
+
+        select.innerHTML = options
+            .map((opt) => `<option value="${escapeHtml(opt.key)}">${escapeHtml(opt.label)}</option>`)
+            .join("");
+        select.value = state.selectedUfvKey;
     }
 
     function getFilteredData() {
-        const ufv = state.selectedUfv;
+        const ufvKey = state.selectedUfvKey;
         const q = state.searchText;
+        const allSelected = ufvKey === ALL_UFV_KEY;
 
         const capexRows = state.data.capex.filter((row) => {
-            const ufvMatch = ufv === "Todas" || row.ufv === ufv;
+            const ufvMatch = allSelected || row.ufv_key === ufvKey;
             if (!ufvMatch) return false;
 
             if (!q) return true;
-            const hay = `${row.ufv} ${row.natureza} ${row.fornecedor} ${row.ciclo}`.toLowerCase();
+            const hay = `${row.ufv_label || row.ufv} ${row.natureza} ${row.fornecedor} ${row.ciclo}`.toLowerCase();
             return hay.includes(q);
         });
 
         const finRows = state.data.financeiro.filter((row) => {
-            if (ufv === "Todas") return true;
-            return row.ufv_pag === ufv;
+            if (allSelected) return true;
+            return row.ufv_key === ufvKey;
         });
 
         return {
@@ -400,7 +491,7 @@
         const section = byId("fluxoSection");
         if (!section) return;
 
-        if (state.selectedUfv !== "Todas" || !state.data.fluxo.length) {
+        if (state.selectedUfvKey !== ALL_UFV_KEY || !state.data.fluxo.length) {
             section.classList.add("hidden");
             return;
         }
@@ -509,7 +600,7 @@
 
         body.innerHTML = pageRows.map((row) => `
             <tr>
-                <td>${escapeHtml(row.ufv)}</td>
+                <td>${escapeHtml(row.ufv_label || row.ufv)}</td>
                 <td>${escapeHtml(row.natureza)}</td>
                 <td>${escapeHtml(row.fornecedor)}</td>
                 <td class="text-right font-mono">${formatCurrency(row.contrato_original)}</td>
@@ -527,7 +618,9 @@
     function updateResumo(filteredCapexRows) {
         const el = byId("resumoFiltros");
         if (!el) return;
-        const label = state.selectedUfv === "Todas" ? "Portfolio" : `UFV: ${state.selectedUfv}`;
+        const label = state.selectedUfvKey === ALL_UFV_KEY
+            ? "Portfolio"
+            : `UFV: ${state.ufvLabelByKey[state.selectedUfvKey] || state.selectedUfvKey}`;
         el.textContent = `${label} | Registros: ${filteredCapexRows.length.toLocaleString("pt-BR")}`;
     }
 
@@ -553,7 +646,7 @@
         const next = byId("nextPage");
 
         filtroUfv.addEventListener("change", () => {
-            state.selectedUfv = filtroUfv.value || "Todas";
+            state.selectedUfvKey = filtroUfv.value || ALL_UFV_KEY;
             state.page = 1;
             render();
         });
@@ -571,10 +664,10 @@
         });
 
         btnLimpar.addEventListener("click", () => {
-            state.selectedUfv = "Todas";
+            state.selectedUfvKey = ALL_UFV_KEY;
             state.searchText = "";
             state.page = 1;
-            filtroUfv.value = "Todas";
+            filtroUfv.value = ALL_UFV_KEY;
             filtroBusca.value = "";
             render();
         });
@@ -642,6 +735,8 @@
             ];
             state.data.financeiro = standardizeFinRows(geralRows);
             state.data.fluxo = normalizeFluxoRows(fluxoRows);
+            state.ufvLabelByKey = buildUfvLabelMap(state.data.capex, state.data.financeiro);
+            applyUfvLabels();
             state.errors = errors;
 
             updateTimestamp(modifiedDates);
