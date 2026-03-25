@@ -459,7 +459,7 @@
             .map((e) => `${path}: ${e.message}`);
 
         return {
-            rows: parsed.data || [],
+            rows: parsed.rows || [],
             lastModified: response.headers.get("last-modified"),
             parseErrors: parseErrors
         };
