@@ -722,7 +722,9 @@
 
     function renderFluxoChart() {
         const section = byId("fluxoSection");
-        if (!section) return;
+        const chartMensal = byId("chartFluxo");
+        const chartAcumulado = byId("chartFluxoAcumulado");
+        if (!section || !chartMensal || !chartAcumulado) return;
 
         if (state.selectedUfvKey !== ALL_UFV_KEY || state.selectedCiclo !== ALL_CICLO_KEY || !state.data.fluxo.length) {
             section.classList.add("hidden");
@@ -739,26 +741,104 @@
         const ordered = Array.from(sumByMes.entries()).sort((a, b) => mesSortValue(a[0]) - mesSortValue(b[0]));
         const x = ordered.map((item) => item[0]);
         const y = ordered.map((item) => item[1]);
+        const acumulado = [];
+        let running = 0;
+        for (const value of y) {
+            running += value;
+            acumulado.push(running);
+        }
 
-        const data = [{
+        const dataMensal = [{
+            type: "bar",
+            x: x,
+            y: y,
+            marker: {
+                color: "#60AB56",
+                line: { color: "#3f7e3f", width: 1 }
+            },
+            customdata: y.map(formatCurrency),
+            hovertemplate: "%{x}<br>Fluxo mensal: %{customdata}<extra></extra>"
+        }];
+
+        const layoutMensal = plotCommonLayout();
+        layoutMensal.margin = { t: 20, r: 18, b: 50, l: 60 };
+        layoutMensal.yaxis.tickprefix = "R$ ";
+
+        Plotly.newPlot("chartFluxo", dataMensal, layoutMensal, {
+            displayModeBar: false,
+            responsive: true
+        });
+
+        const dataAcumulado = [{
             type: "scatter",
             mode: "lines+markers",
             x: x,
-            y: y,
+            y: acumulado,
             line: { color: "#AECC56", width: 3 },
-            marker: { size: 7, color: "#60AB56" },
-            hovertemplate: "%{x}<br>" + "%{y:,.2f}<extra></extra>"
+            marker: { size: 6, color: "#AECC56" },
+            fill: "tozeroy",
+            fillcolor: "rgba(174, 204, 86, 0.12)",
+            customdata: acumulado.map(formatCurrency),
+            hovertemplate: "%{x}<br>Fluxo acumulado: %{customdata}<extra></extra>"
         }];
 
-        const layout = plotCommonLayout();
-        layout.margin = { t: 20, r: 20, b: 50, l: 60 };
-        layout.yaxis.tickprefix = "R$ ";
+        const layoutAcumulado = plotCommonLayout();
+        layoutAcumulado.margin = { t: 20, r: 18, b: 50, l: 60 };
+        layoutAcumulado.yaxis.tickprefix = "R$ ";
 
-        Plotly.newPlot("chartFluxo", data, layout, {
+        Plotly.newPlot("chartFluxoAcumulado", dataAcumulado, layoutAcumulado, {
             displayModeBar: false,
             responsive: true
         });
         section.classList.remove("hidden");
+    }
+
+    function applyFieldTooltips() {
+        const tipsById = {
+            statusCarregamento: "Status da leitura dos arquivos de dados do dashboard.",
+            ultimaAtualizacao: "Data e hora da ultima atualizacao detectada nos arquivos fonte.",
+            resumoFiltros: "Resumo dos filtros ativos e quantidade de registros exibidos na tabela.",
+            btnLimpar: "Limpa UFV, Ciclo e Busca, retornando para a visao geral.",
+            filtroUfv: "Filtra o dashboard por usina (UFV).",
+            filtroBusca: "Busca textual por UFV, natureza, fornecedor ou ciclo.",
+            filtroCiclo: "Filtra os dados por ciclo de obra.",
+            kpiContratado: "Soma dos valores contratados nas linhas de Capex filtradas.",
+            kpiMedido: "Soma do valor medido (FD + Medicao) nas linhas filtradas.",
+            kpiPago: "Soma dos pagamentos do financeiro vinculados ao recorte atual.",
+            kpiSaldo: "Saldo ainda a medir considerando os contratos filtrados.",
+            kpiDif: "Diferenca entre valor pago e valor medido.",
+            chartComparativo: "Compara os totais de contratado e medido no recorte atual.",
+            chartGauge: "Percentual medio de avanco contratual no recorte atual.",
+            chartFluxo: "Fluxo de caixa mensal previsto para o portfolio completo.",
+            chartFluxoAcumulado: "Evolucao acumulada do fluxo de caixa ao longo dos meses.",
+            tableInfo: "Quantidade total de contratos exibidos na tabela.",
+            prevPage: "Volta para a pagina anterior da tabela.",
+            nextPage: "Avanca para a proxima pagina da tabela.",
+            pageLabel: "Pagina atual da tabela."
+        };
+
+        for (const [id, text] of Object.entries(tipsById)) {
+            const el = byId(id);
+            if (el) el.title = text;
+        }
+
+        const sortTips = {
+            ufv: "Usina associada ao contrato.",
+            natureza: "Natureza do servico, material ou escopo contratado.",
+            fornecedor: "Fornecedor responsavel pelo contrato.",
+            contrato_original: "Valor original do contrato antes de aditivos.",
+            valor_total: "Valor total considerando aditivos e ajustes.",
+            fd_medicao: "Valor total medido (FD + Medicao).",
+            saldo_a_medir: "Valor ainda nao medido no contrato.",
+            avanco_contratual: "Percentual de avanco contratual da linha.",
+            ciclo: "Ciclo de planejamento/execucao do contrato."
+        };
+
+        document.querySelectorAll("th[data-sort]").forEach((th) => {
+            const key = th.getAttribute("data-sort");
+            if (!key) return;
+            th.title = sortTips[key] || "Clique para ordenar a tabela por esta coluna.";
+        });
     }
 
     function getSortedRows(rows) {
@@ -833,17 +913,17 @@
 
         body.innerHTML = pageRows.map((row) => `
             <tr>
-                <td>${escapeHtml(row.ufv_label || row.ufv)}</td>
-                <td>${escapeHtml(row.natureza)}</td>
-                <td>${escapeHtml(row.fornecedor)}</td>
-                <td class="text-right font-mono">${formatCurrency(row.contrato_original)}</td>
-                <td class="text-right font-mono">${formatCurrency(row.valor_total)}</td>
-                <td class="text-right font-mono">${formatCurrency(row.fd_medicao)}</td>
-                <td class="text-right font-mono">${formatCurrency(row.saldo_a_medir)}</td>
-                <td class="text-right font-semibold ${avancoDisplay(row.avanco_contratual) >= 100 ? "text-green-300" : "text-amber-300"}">
+                <td title="UFV do contrato">${escapeHtml(row.ufv_label || row.ufv)}</td>
+                <td title="Natureza do contrato">${escapeHtml(row.natureza)}</td>
+                <td title="Fornecedor do contrato">${escapeHtml(row.fornecedor)}</td>
+                <td title="Valor original do contrato" class="text-right font-mono">${formatCurrency(row.contrato_original)}</td>
+                <td title="Valor total com aditivos" class="text-right font-mono">${formatCurrency(row.valor_total)}</td>
+                <td title="Valor medido (FD + Medicao)" class="text-right font-mono">${formatCurrency(row.fd_medicao)}</td>
+                <td title="Saldo ainda a medir" class="text-right font-mono">${formatCurrency(row.saldo_a_medir)}</td>
+                <td title="Percentual de avanco contratual" class="text-right font-semibold ${avancoDisplay(row.avanco_contratual) >= 100 ? "text-green-300" : "text-amber-300"}">
                     ${formatPercent(avancoDisplay(row.avanco_contratual))}
                 </td>
-                <td>${escapeHtml(row.ciclo)}</td>
+                <td title="Ciclo do contrato">${escapeHtml(row.ciclo)}</td>
             </tr>
         `).join("");
     }
@@ -990,6 +1070,7 @@
             fillUfvFilter();
             fillCicloFilter();
             bindEvents();
+            applyFieldTooltips();
             render();
         } catch (err) {
             setStatus(`Falha geral na carga dos dados: ${err && err.message ? err.message : err}`, true);

@@ -260,8 +260,20 @@
     </section>
 
     <section id="fluxoSection" class="card p-5 hidden">
-        <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green mb-3">Previsao de Fluxo de Caixa</h3>
-        <div id="chartFluxo" class="h-[320px]"></div>
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-comerc-green">Previsao de Fluxo de Caixa</h3>
+            <p class="text-xs text-gray-400">Visao mensal e acumulada do portfolio</p>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <article class="rounded-xl border border-[#333] bg-[#1d1d1d] p-4">
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-300 mb-2">Fluxo Mensal</h4>
+                <div id="chartFluxo" class="h-[280px]"></div>
+            </article>
+            <article class="rounded-xl border border-[#333] bg-[#1d1d1d] p-4">
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-300 mb-2">Fluxo Acumulado</h4>
+                <div id="chartFluxoAcumulado" class="h-[280px]"></div>
+            </article>
+        </div>
     </section>
 
     <section class="card p-5">
